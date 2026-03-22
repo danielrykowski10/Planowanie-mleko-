@@ -15,9 +15,12 @@ def wczytaj_dane():
         try:
             with open(PLIK_WODA, "r", encoding="utf-8") as f:
                 dane = json.load(f)
+                # Zabezpieczenie dla starych wpisów
                 for wpis in dane:
-                    if "Serwatka_m3" not in wpis:
-                        wpis["Serwatka_m3"] = 0.0
+                    if "Serwatka_m3" not in wpis: wpis["Serwatka_m3"] = 0.0
+                    if "Kotlownia_m3" not in wpis: wpis["Kotlownia_m3"] = 0.0
+                    if "Maszynownia_m3" not in wpis: wpis["Maszynownia_m3"] = 0.0
+                    if "Odzysk_m3" not in wpis: wpis["Odzysk_m3"] = 0.0
                 return dane
         except:
             return []
@@ -76,14 +79,23 @@ with tab1:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**🚰 Zużycie i Produkcja**")
-            woda_m3 = st.number_input("Zużycie wody (m³)", min_value=0.0, value=500.0, step=10.0)
-            mleko_l = st.number_input("Przerobione mleko (L)", min_value=0, value=250000, step=5000)
+            woda_m3 = st.number_input("Zużycie wody (główny wodomierz m³)", min_value=0.0, value=500.0, step=10.0)
+            mleko_tys_l = st.number_input("Przerobione mleko (w tys. L)", min_value=0.0, value=250.0, step=5.0, help="Wpisz np. 250 dla 250 000 litrów")
             serwatka_m3 = st.number_input("Zrzut serwatki do ścieków (m³)", min_value=0.0, value=0.0, step=1.0)
         with c2:
             st.markdown("**☢️ Parametry Ścieków**")
             scieki_m3 = st.number_input("Ilość ścieków (m³)", min_value=0.0, value=500.0, step=10.0)
             ph_sciekow = st.slider("Średnie pH ścieków", min_value=0.0, max_value=14.0, value=7.5, step=0.1)
             chzt_sciekow = st.number_input("Wynik ChZT (mg/L)", min_value=0, value=2100, step=50)
+            
+        st.markdown("**🏭 Dodatkowe Podliczniki Wody (m³)**")
+        c3, c4, c5 = st.columns(3)
+        with c3:
+            kotlownia_m3 = st.number_input("Kotłownia (m³)", min_value=0.0, value=0.0, step=1.0)
+        with c4:
+            maszynownia_m3 = st.number_input("Maszynownia (m³)", min_value=0.0, value=0.0, step=1.0)
+        with c5:
+            odzysk_m3 = st.number_input("Odzysk (m³)", min_value=0.0, value=0.0, step=1.0)
             
         zapisz_btn = st.form_submit_button("💾 ZAPISZ WYNIKI DO BAZY", type="primary")
         
@@ -94,11 +106,14 @@ with tab1:
             nowy_wpis = {
                 "Data": dane_data,
                 "Woda_m3": woda_m3,
-                "Mleko_L": mleko_l,
+                "Mleko_L": mleko_tys_l * 1000, # Zapisujemy z powrotem jako zwykłe litry dla kompatybilności i obliczeń
                 "Serwatka_m3": serwatka_m3,
                 "Scieki_m3": scieki_m3,
                 "pH": ph_sciekow,
-                "ChZT": chzt_sciekow
+                "ChZT": chzt_sciekow,
+                "Kotlownia_m3": kotlownia_m3,
+                "Maszynownia_m3": maszynownia_m3,
+                "Odzysk_m3": odzysk_m3
             }
             
             if istniejacy_indeks is not None:
@@ -128,13 +143,22 @@ def stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, toler
 df = pd.DataFrame()
 if st.session_state.historia_wody:
     df = pd.DataFrame(st.session_state.historia_wody)
+    
+    # Zabezpieczenie na puste / brakujące klucze w starych plikach JSON
     if 'Serwatka_m3' not in df.columns: df['Serwatka_m3'] = 0.0
+    if 'Kotlownia_m3' not in df.columns: df['Kotlownia_m3'] = 0.0
+    if 'Maszynownia_m3' not in df.columns: df['Maszynownia_m3'] = 0.0
+    if 'Odzysk_m3' not in df.columns: df['Odzysk_m3'] = 0.0
+    
     df['Data'] = pd.to_datetime(df['Data'])
     df = df.sort_values('Data')
     df['Wskaźnik (L/L)'] = (df['Woda_m3'] * 1000) / df['Mleko_L'].replace(0, 1)
     df['Wskaźnik (L/L)'] = df['Wskaźnik (L/L)'].round(2)
     df['Oczekiwane Ścieki (m³)'] = df['Woda_m3'] + df['Serwatka_m3']
     df['Różnica Bilansu (m³)'] = (df['Scieki_m3'] - df['Oczekiwane Ścieki (m³)']).round(1)
+    
+    # Kolumna pomocnicza do czytelniejszego wyświetlania w tabelach
+    df['Mleko (tys. L)'] = df['Mleko_L'] / 1000
 
 # ==========================================
 # ZAKŁADKA 2: ANALIZA OSTATNIE 7 DNI
@@ -152,7 +176,7 @@ with tab2:
             st.metric("Dzisiejszy Wskaźnik Wody", f"{ost_dane['Wskaźnik (L/L)']} L/L", 
                       delta=f"{round(ost_dane['Wskaźnik (L/L)'] - cel_woda, 2)} od celu", delta_color="inverse")
         with col_s2:
-            st.metric("Dzisiejszy zrzut serwatki", f"{ost_dane['Serwatka_m3']} m³")
+            st.metric("Przerób mleka dzisiaj", f"{ost_dane['Mleko (tys. L)']} tys. L")
         with col_s3:
             bilans = ost_dane['Różnica Bilansu (m³)']
             if abs(bilans) <= tolerancja_bilansu:
@@ -169,12 +193,11 @@ with tab2:
             st.markdown("**Zanieczyszczenie ChZT (mg/L) - 7 Dni**")
             st.bar_chart(df_7[['Data', 'ChZT']].set_index('Data'), color="#ff7f0e")
 
-        st.markdown("#### 📋 Szczegółowe dane z 7 dni")
-        cols_to_show = ['Data', 'Woda_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
+        st.markdown("#### 📋 Szczegółowe dane z 7 dni (z podlicznikami)")
+        cols_to_show = ['Data', 'Mleko (tys. L)', 'Woda_m3', 'Kotlownia_m3', 'Maszynownia_m3', 'Odzysk_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
         df_7_wyswietl = df_7[cols_to_show].sort_values('Data', ascending=False).copy()
         df_7_wyswietl['Data'] = df_7_wyswietl['Data'].dt.strftime('%Y-%m-%d')
         
-        # Rozbita, bezpieczna linijka do stylowania tabeli
         styled_df_7 = df_7_wyswietl.style.apply(
             lambda row: stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, tolerancja_bilansu, df_7_wyswietl.columns), 
             axis=1
@@ -202,29 +225,37 @@ with tab3:
         suma_sciekow = df_mc['Scieki_m3'].sum()
         suma_serwatki = df_mc['Serwatka_m3'].sum()
         
+        # Sumy podliczników
+        suma_kotlownia = df_mc['Kotlownia_m3'].sum()
+        suma_maszynownia = df_mc['Maszynownia_m3'].sum()
+        suma_odzysk = df_mc['Odzysk_m3'].sum()
+        
         # Finanse
         koszt_wody = suma_wody * cena_wody
         koszt_sciekow = suma_sciekow * cena_sciekow
         koszt_total = koszt_wody + koszt_sciekow
         koszt_na_1000l = (koszt_total / (suma_mleka / 1000)) if suma_mleka > 0 else 0
         
-        # Wskaźniki i Zgodność (Compliance)
+        # Wskaźniki i Zgodność
         sredni_wskaznik_mc = (suma_wody * 1000) / suma_mleka if suma_mleka > 0 else 0
-        
         przekroczenia_ph = len(df_mc[(df_mc['pH'] < limit_ph_min) | (df_mc['pH'] > limit_ph_max)])
         przekroczenia_chzt = len(df_mc[df_mc['ChZT'] > limit_chzt])
-        
-        suma_roznic_bilansu = df_mc['Różnica Bilansu (m³)'].sum() # Niezbilansowana woda w miesiącu
+        suma_roznic_bilansu = df_mc['Różnica Bilansu (m³)'].sum()
 
         st.markdown(f"### Raport z wyników dla: **{wybrany_miesiac}** (zarejestrowano {liczba_dni} dni)")
         
         # --- SEKCJA 1: WOLUMENY ---
-        st.markdown("#### 📦 Wolumeny Produkcyjne")
+        st.markdown("#### 📦 Wolumeny Produkcyjne i Podliczniki")
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Przerobione Mleko", f"{suma_mleka:,.0f} L".replace(',', ' '))
-        k2.metric("Pobrana Woda", f"{suma_wody:,.0f} m³".replace(',', ' '))
+        k2.metric("Pobrana Woda (Całość)", f"{suma_wody:,.0f} m³".replace(',', ' '))
         k3.metric("Zrzut Serwatki", f"{suma_serwatki:,.0f} m³".replace(',', ' '))
         k4.metric("Oddane Ścieki", f"{suma_sciekow:,.0f} m³".replace(',', ' '))
+        
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Woda: Kotłownia (Suma)", f"{suma_kotlownia:,.0f} m³".replace(',', ' '))
+        p2.metric("Woda: Maszynownia (Suma)", f"{suma_maszynownia:,.0f} m³".replace(',', ' '))
+        p3.metric("Odzysk Wody (Suma)", f"{suma_odzysk:,.0f} m³".replace(',', ' '))
         
         st.divider()
         
@@ -255,17 +286,12 @@ with tab3:
         else:
             c4.metric("Niezbilansowane ścieki", f"{suma_roznic_bilansu:,.1f} m³".replace(',', ' '), "W normie pomiarowej", delta_color="normal")
 
-        # --- SEKCJA 4: WYKRESY MIESIĘCZNE ---
-        st.markdown("#### 📉 Wykres KPI na przestrzeni miesiąca")
-        st.line_chart(df_mc[['Data', 'Wskaźnik (L/L)']].set_index('Data'), color="#1f77b4")
-
-        # --- SEKCJA 5: TABELA ---
-        st.markdown("#### 📋 Szczegółowe dane dzienne")
-        cols_to_show = ['Data', 'Woda_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
+        # --- SEKCJA 4: TABELA ---
+        st.markdown("#### 📋 Szczegółowe dane dzienne w miesiącu")
+        cols_to_show = ['Data', 'Mleko (tys. L)', 'Woda_m3', 'Kotlownia_m3', 'Maszynownia_m3', 'Odzysk_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
         df_mc_wyswietl = df_mc[cols_to_show].sort_values('Data', ascending=False).copy()
         df_mc_wyswietl['Data'] = df_mc_wyswietl['Data'].dt.strftime('%Y-%m-%d')
         
-        # Rozbita, bezpieczna linijka do stylowania tabeli
         styled_df_mc = df_mc_wyswietl.style.apply(
             lambda row: stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, tolerancja_bilansu, df_mc_wyswietl.columns), 
             axis=1
