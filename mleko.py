@@ -1,7 +1,8 @@
 import streamlit as st
+import pandas as pd
 
 # --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Bilans Mleka - Serownie", layout="wide")
+st.set_page_config(page_title="Tygodniowy Planista Mleka", layout="wide")
 
 # --- DANE ZUŻYCIA (LITRY NA 1 WAR) ---
 ZUZYCIE_WAR = {
@@ -23,137 +24,126 @@ ZUZYCIE_WAR = {
 CEL_ZAPASU_MAX = 0         # Nie chcemy mleka na plusie
 CEL_ZAPASU_MIN = -100000   # Maksymalny dopuszczalny minus to -100 tys. litrów
 
-# --- STYLIZACJA ---
-st.markdown("""
-    <style>
-        .metric-box {
-            background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; text-align: center;
-        }
-        .metric-title { font-size: 14px; color: #666; text-transform: uppercase; font-weight: bold;}
-        .metric-value { font-size: 24px; color: #1f77b4; font-weight: bold; margin-top: 5px;}
+st.title("🥛 Tygodniowy Planista Zużycia Mleka")
+
+# --- PANEL BOCZNY (USTAWIENIA GLOBALNE) ---
+with st.sidebar:
+    st.header("⚙️ Start Tygodnia")
+    zapas_start = st.number_input("Zapas w Poniedziałek rano (L):", value=50000, step=1000)
+    
+    st.markdown("---")
+    st.markdown("""
+    **Legenda statusów:**
+    * 🟢 **OK** (od 0 do -100 tys.) - bezpieczny zapas na awarię.
+    * 🟠 **NADWYŻKA** (> 0) - Odpal dodatkową linię lub zwiększ warki!
+    * 🔴 **BRAK MLEKA** (< -100 tys.) - Zbyt duża produkcja, zdejmij warki!
+    """)
+
+dni_tygodnia = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+
+# Zmienna przechowująca zapas "przechodzący" z dnia na dzień
+zapas_obecny = zapas_start
+raport_tygodniowy = []
+
+# --- PĘTLA PO DNIACH TYGODNIA ---
+for i, dzien in enumerate(dni_tygodnia):
+    # Domyślnie rozwijamy tylko Poniedziałek, resztę można kliknąć
+    with st.expander(f"📅 {dzien} (Zapas startowy: {int(zapas_obecny):,} L)".replace(",", " "), expanded=(i==0)):
         
-        .alert-box {
-            background-color: #ffebee; border: 1px solid #ffcdd2; border-radius: 8px; padding: 15px; text-align: center; color: #b71c1c; font-weight: bold;
-        }
-        .success-box {
-            background-color: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; padding: 15px; text-align: center; color: #2e7d32; font-weight: bold;
-        }
-        .warning-box {
-            background-color: #fff3e0; border: 1px solid #ffcc80; border-radius: 8px; padding: 15px; text-align: center; color: #e65100; font-weight: bold;
-        }
-    </style>
-""", unsafe_allow_html=True)
+        st.markdown("#### 📥 Podaż mleka")
+        c1, c2, c3 = st.columns(3)
+        dostawy = c1.number_input("Dostawy mleka (L):", value=600000, step=1000, key=f"dost_{i}")
+        smietanka = c2.number_input("Odbiór Śmietanki (L):", value=0, step=1000, key=f"smiet_{i}")
+        bel = c3.number_input("Odbiór Bel (L):", value=0, step=1000, key=f"bel_{i}")
+        
+        mleko_dostepne = zapas_obecny + dostawy - smietanka - bel
 
-st.title("🥛 Kalkulator Zużycia Mleka & Asystent")
+        st.markdown("#### 🧀 Wybór aktywnych linii i warów")
+        p1, p2, p3 = st.columns(3)
+        
+        # CHEDDAR
+        with p1:
+            ch_on = st.checkbox("🧀 Linia Cheddar", value=True, key=f"ch_on_{i}")
+            if ch_on:
+                ch_typ = st.selectbox("Wariant Cheddar:", ["40", "50"], key=f"ch_typ_{i}")
+                ch_wary = st.number_input("Ilość warów (Cheddar):", min_value=0, value=19, key=f"ch_w_{i}")
+                zuzycie_ch = ch_wary * ZUZYCIE_WAR["Cheddar"][ch_typ]
+            else:
+                zuzycie_ch = 0
+                
+        # BERTSCH
+        with p2:
+            be_on = st.checkbox("🧀 Linia Bertsch", value=True, key=f"be_on_{i}")
+            if be_on:
+                be_typ = st.selectbox("Wariant Bertsch:", ["30", "45", "50"], key=f"be_typ_{i}")
+                be_wary = st.number_input("Ilość warów (Bertsch):", min_value=0, value=15, key=f"be_w_{i}")
+                zuzycie_be = be_wary * ZUZYCIE_WAR["Bertsch"][be_typ]
+            else:
+                zuzycie_be = 0
 
-# --- SEKCJA 1: BILANS SUROWCA WEJŚCIOWEGO ---
-st.subheader("📥 Podaż mleka")
-c1, c2, c3, c4 = st.columns(4)
+        # MOZZARELLA
+        with p3:
+            mo_on = st.checkbox("🧀 Linia Mozzarella", value=True, key=f"mo_on_{i}")
+            if mo_on:
+                # Mozzarella ma tylko jeden wariant z podanych danych (Standard)
+                mo_wary = st.number_input("Ilość warów (Mozzarella):", min_value=0, value=18, key=f"mo_w_{i}")
+                zuzycie_mo = mo_wary * ZUZYCIE_WAR["Mozzarella"]["Standard"]
+            else:
+                zuzycie_mo = 0
 
-with c1:
-    zapas_pocz = st.number_input("Zapas z wczoraj (L):", value=50000, step=1000)
-with c2:
-    dostawy = st.number_input("Mleko dostarczone (L):", value=600000, step=1000)
-with c3:
-    smietanka = st.number_input("Śmietanka (Odbiór) (L):", value=0, step=1000)
-with c4:
-    bel = st.number_input("Odbiór Bel (L):", value=0, step=1000)
+        # OBLICZENIA DZIENNE
+        zuzycie_dzis = zuzycie_ch + zuzycie_be + zuzycie_mo
+        zapas_koncowy = mleko_dostepne - zuzycie_dzis
 
-mleko_dostepne = zapas_pocz + dostawy - smietanka - bel
+        # STATUS ZAPASU
+        if zapas_koncowy > CEL_ZAPASU_MAX:
+            status = "🟠 NADWYŻKA (Zwiększ produkcję)"
+            color = "#e65100"
+        elif zapas_koncowy < CEL_ZAPASU_MIN:
+            status = "🔴 BRAK MLEKA (Zmniejsz produkcję)"
+            color = "#b71c1c"
+        else:
+            status = "🟢 IDEALNIE (Bezpieczny minus)"
+            color = "#2e7d32"
 
-# --- SEKCJA 2: PLANOWANIE PRODUKCJI ---
+        st.markdown(f"""
+            <div style="background-color:#f8f9fa; padding:10px; border-radius:5px; border-left: 5px solid {color}; margin-top:15px;">
+                <span style="font-size:16px;">Zużycie całkowite w tym dniu: <b>{int(zuzycie_dzis):,} L</b></span><br>
+                <span style="font-size:18px;">Przewidywany zapas na jutro: <b style="color:{color};">{int(zapas_koncowy):,} L</b> ({status})</span>
+            </div>
+        """.replace(",", " "), unsafe_allow_html=True)
+
+        # DODAWANIE DO RAPORTU
+        raport_tygodniowy.append({
+            "Dzień": dzien,
+            "Zapas rano (L)": f"{int(zapas_obecny):,}".replace(",", " "),
+            "Dostawy Netto (L)": f"{int(dostawy - smietanka - bel):,}".replace(",", " "),
+            "Aktywne Linie": f"{'Ch ' if ch_on else ''}{'Be ' if be_on else ''}{'Mo' if mo_on else ''}",
+            "Zużycie łączne (L)": f"{int(zuzycie_dzis):,}".replace(",", " "),
+            "Zapas końcowy (L)": int(zapas_koncowy), # Int dla formatowania Pandas
+            "Status": status
+        })
+
+        # Przeniesienie zapasu na kolejny dzień
+        zapas_obecny = zapas_koncowy
+
+# --- TABELA PODSUMOWUJĄCA CAŁY TYDZIEŃ ---
 st.divider()
-st.subheader("🧀 Planowanie produkcji na serowniach")
+st.subheader("📊 Tygodniowe podsumowanie zapasów mleka")
 
-col_ch, col_be, col_mo = st.columns(3)
+df_raport = pd.DataFrame(raport_tygodniowy)
 
-with col_ch:
-    st.markdown("### Cheddar")
-    ch_typ = st.selectbox("Wariant Cheddar:", ["Brak produkcji", "40", "50"], index=1)
-    if ch_typ != "Brak produkcji":
-        ch_wary = st.slider("Liczba warów (Cheddar):", min_value=18, max_value=20, value=19)
-        zuzycie_ch = ch_wary * ZUZYCIE_WAR["Cheddar"][ch_typ]
-    else:
-        ch_wary = 0
-        zuzycie_ch = 0
-    st.info(f"Zużycie: **{int(zuzycie_ch):,} L**".replace(",", " "))
+# Funkcja kolorująca wiersze w tabeli na podstawie statusu
+def style_status(val):
+    if "NADWYŻKA" in val:
+        return 'background-color: #fff3e0; color: #e65100; font-weight: bold;'
+    elif "BRAK" in val:
+        return 'background-color: #ffebee; color: #b71c1c; font-weight: bold;'
+    elif "IDEALNIE" in val:
+        return 'background-color: #e8f5e9; color: #2e7d32; font-weight: bold;'
+    return ''
 
-with col_be:
-    st.markdown("### Bertsch")
-    be_typ = st.selectbox("Wariant Bertsch:", ["Brak produkcji", "30", "45", "50"], index=1)
-    if be_typ != "Brak produkcji":
-        be_wary = st.number_input("Liczba warów (Bertsch):", value=15, disabled=True, help="Stała liczba 15 warów")
-        zuzycie_be = be_wary * ZUZYCIE_WAR["Bertsch"][be_typ]
-    else:
-        be_wary = 0
-        zuzycie_be = 0
-    st.info(f"Zużycie: **{int(zuzycie_be):,} L**".replace(",", " "))
+# Formatowanie zapasu końcowego do wyświetlenia z odstępami
+df_raport['Zapas końcowy (L)'] = df_raport['Zapas końcowy (L)'].apply(lambda x: f"{x:,}".replace(",", " "))
 
-with col_mo:
-    st.markdown("### Mozzarella")
-    mo_on = st.checkbox("Produkcja Mozzarelli", value=True)
-    if mo_on:
-        mo_wary = st.number_input("Liczba warów (Mozzarella):", value=18, disabled=True, help="Stała liczba 18 warów")
-        zuzycie_mo = mo_wary * ZUZYCIE_WAR["Mozzarella"]["Standard"]
-    else:
-        mo_wary = 0
-        zuzycie_mo = 0
-    st.info(f"Zużycie: **{int(zuzycie_mo):,} L**".replace(",", " "))
-
-# --- SEKCJA 3: PODSUMOWANIE ---
-st.divider()
-st.subheader("📊 Podsumowanie Dnia")
-
-zuzycie_calkowite = zuzycie_ch + zuzycie_be + zuzycie_mo
-zapas_koncowy = mleko_dostepne - zuzycie_calkowite
-
-r1, r2, r3 = st.columns(3)
-
-with r1:
-    st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-title">Mleko dostępne do produkcji</div>
-            <div class="metric-value">{int(mleko_dostepne):,} L</div>
-        </div>
-    """.replace(",", " "), unsafe_allow_html=True)
-
-with r2:
-    st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-title">Zaplanowane zużycie całkowite</div>
-            <div class="metric-value" style="color:#d62728;">- {int(zuzycie_calkowite):,} L</div>
-        </div>
-    """.replace(",", " "), unsafe_allow_html=True)
-
-with r3:
-    if zapas_koncowy > CEL_ZAPASU_MAX:
-        st.markdown(f"""
-            <div class="warning-box">
-                <div class="metric-title" style="color:#e65100;">NADWYŻKA MLEKA (RYZYKO!)</div>
-                <div class="metric-value" style="color:#e65100;">+{int(zapas_koncowy):,} L</div>
-            </div>
-        """.replace(",", " "), unsafe_allow_html=True)
-    elif zapas_koncowy < CEL_ZAPASU_MIN:
-        st.markdown(f"""
-            <div class="alert-box">
-                <div class="metric-title" style="color:#b71c1c;">KRYTYCZNY BRAK MLEKA</div>
-                <div class="metric-value" style="color:#b71c1c;">{int(zapas_koncowy):,} L</div>
-            </div>
-        """.replace(",", " "), unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-            <div class="success-box">
-                <div class="metric-title" style="color:#2e7d32;">BEZPIECZNY ZAPAS (NA MINUSIE)</div>
-                <div class="metric-value" style="color:#2e7d32;">{int(zapas_koncowy):,} L</div>
-            </div>
-        """.replace(",", " "), unsafe_allow_html=True)
-
-# --- ASYSTENT PLANOWANIA ---
-st.markdown("<br>", unsafe_allow_html=True)
-if zapas_koncowy > CEL_ZAPASU_MAX:
-    st.warning(f"💡 **ASYSTENT:** Zostaje Ci w silosach **{int(zapas_koncowy):,} L** mleka na plusie! W razie awarii nie będziesz miał gdzie zrzucać kolejnych dostaw. Rozważ uruchomienie dodatkowej linii, aby zejść z zapasem poniżej zera.".replace(",", " "))
-elif zapas_koncowy < CEL_ZAPASU_MIN:
-    przekroczenie = abs(zapas_koncowy) - abs(CEL_ZAPASU_MIN)
-    st.error(f"🚨 **ASYSTENT:** Uważaj, zaplanowałeś za dużą produkcję! Jesteś na minusie o **{int(abs(zapas_koncowy)):,} L**, co przekracza limit -100 tys. o dokładnie **{int(przekroczenie):,} L**. Musisz zmniejszyć ilość warów lub wyłączyć linię.".replace(",", " "))
-else:
-    st.success(f"✅ **ASYSTENT:** Plan jest doskonały! Zapas końcowy wynosi **{int(zapas_koncowy):,} L**. Silosy są bezpiecznie opróżnione na wypadek awarii, a deficyt mieści się w dozwolonej normie do -100 tys. litrów.".replace(",", " "))
+st.dataframe(df_raport.style.applymap(style_status, subset=['Status']), use_container_width=True, hide_index=True)
