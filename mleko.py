@@ -169,6 +169,18 @@ with tab2:
             st.markdown("**Zanieczyszczenie ChZT (mg/L) - 7 Dni**")
             st.bar_chart(df_7[['Data', 'ChZT']].set_index('Data'), color="#ff7f0e")
 
+        st.markdown("#### 📋 Szczegółowe dane z 7 dni")
+        cols_to_show = ['Data', 'Woda_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
+        df_7_wyswietl = df_7[cols_to_show].sort_values('Data', ascending=False).copy()
+        df_7_wyswietl['Data'] = df_7_wyswietl['Data'].dt.strftime('%Y-%m-%d')
+        
+        # Rozbita, bezpieczna linijka do stylowania tabeli
+        styled_df_7 = df_7_wyswietl.style.apply(
+            lambda row: stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, tolerancja_bilansu, df_7_wyswietl.columns), 
+            axis=1
+        )
+        st.dataframe(styled_df_7, use_container_width=True, hide_index=True)
+
 # ==========================================
 # ZAKŁADKA 3: ROZBUDOWANY RAPORT MIESIĘCZNY
 # ==========================================
@@ -198,7 +210,6 @@ with tab3:
         
         # Wskaźniki i Zgodność (Compliance)
         sredni_wskaznik_mc = (suma_wody * 1000) / suma_mleka if suma_mleka > 0 else 0
-        dni_kpi_ok = len(df_mc[df_mc['Wskaźnik (L/L)'] <= cel_woda])
         
         przekroczenia_ph = len(df_mc[(df_mc['pH'] < limit_ph_min) | (df_mc['pH'] > limit_ph_max)])
         przekroczenia_chzt = len(df_mc[df_mc['ChZT'] > limit_chzt])
@@ -239,8 +250,7 @@ with tab3:
         c2.metric("Przekroczenia pH", f"{przekroczenia_ph} dni", "Ryzyko kar!" if przekroczenia_ph > 0 else "Brak naruszeń", delta_color="inverse" if przekroczenia_ph > 0 else "normal")
         c3.metric("Przekroczenia ChZT", f"{przekroczenia_chzt} dni", "Zrzuty białka!" if przekroczenia_chzt > 0 else "Czysto", delta_color="inverse" if przekroczenia_chzt > 0 else "normal")
         
-        # Podsumowanie wycieków miesięcznych
-        if abs(suma_roznic_bilansu) > (tolerancja_bilansu * 5): # Jeśli w skali miesiąca zniknęło dużo
+        if abs(suma_roznic_bilansu) > (tolerancja_bilansu * 5): 
             c4.metric("Niezbilansowane ścieki", f"{suma_roznic_bilansu:,.1f} m³".replace(',', ' '), "Potencjalny wyciek / awaria", delta_color="inverse")
         else:
             c4.metric("Niezbilansowane ścieki", f"{suma_roznic_bilansu:,.1f} m³".replace(',', ' '), "W normie pomiarowej", delta_color="normal")
@@ -254,4 +264,10 @@ with tab3:
         cols_to_show = ['Data', 'Woda_m3', 'Serwatka_m3', 'Scieki_m3', 'Różnica Bilansu (m³)', 'Wskaźnik (L/L)', 'pH', 'ChZT']
         df_mc_wyswietl = df_mc[cols_to_show].sort_values('Data', ascending=False).copy()
         df_mc_wyswietl['Data'] = df_mc_wyswietl['Data'].dt.strftime('%Y-%m-%d')
-        st.dataframe(df_mc_wyswietl.style.apply(lambda row: stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, tolerancja_bilansu, df_mc_wyswietl.columns), axis=1), use_container_width=True, hide_index=True)True, hide_index=True)
+        
+        # Rozbita, bezpieczna linijka do stylowania tabeli
+        styled_df_mc = df_mc_wyswietl.style.apply(
+            lambda row: stylizuj_tabele(row, cel_woda, limit_chzt, limit_ph_min, limit_ph_max, tolerancja_bilansu, df_mc_wyswietl.columns), 
+            axis=1
+        )
+        st.dataframe(styled_df_mc, use_container_width=True, hide_index=True)
