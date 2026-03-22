@@ -2,148 +2,147 @@ import streamlit as st
 import pandas as pd
 
 # --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Tygodniowy Planista Mleka", layout="wide")
+st.set_page_config(page_title="Monitor Wody i Ścieków", layout="wide")
 
-# --- DANE ZUŻYCIA (LITRY NA 1 WAR) ---
-ZUZYCIE_WAR = {
-    "Cheddar": {
-        "40": 237000 / 19,
-        "50": 227000 / 19
-    },
-    "Bertsch": {
-        "30": 198000 / 15,
-        "45": 184000 / 15,
-        "50": 163000 / 15
-    },
-    "Mozzarella": {
-        "Standard": 196000 / 18
-    }
-}
+# --- STYLIZACJA (Spójna z poprzednimi apkami) ---
+st.markdown("""
+    <style>
+        .metric-box {
+            background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; text-align: center;
+        }
+        .metric-title { font-size: 14px; color: #666; text-transform: uppercase; font-weight: bold;}
+        .metric-value { font-size: 24px; color: #1f77b4; font-weight: bold; margin-top: 5px;}
+        .alert-box {
+            background-color: #ffebee; border: 1px solid #ffcdd2; border-radius: 8px; padding: 15px; text-align: center; color: #b71c1c; font-weight: bold;
+        }
+        .success-box {
+            background-color: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; padding: 15px; text-align: center; color: #2e7d32; font-weight: bold;
+        }
+        .warning-box {
+            background-color: #fff3e0; border: 1px solid #ffcc80; border-radius: 8px; padding: 15px; text-align: center; color: #e65100; font-weight: bold;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- LIMITY BEZPIECZEŃSTWA ---
-CEL_ZAPASU_MAX = 0         # Nie chcemy mleka na plusie
-CEL_ZAPASU_MIN = -100000   # Maksymalny dopuszczalny minus to -100 tys. litrów
+st.title("💧 Monitor Zużycia Wody i Kontroli Ścieków")
 
-st.title("🥛 Tygodniowy Planista Zużycia Mleka")
-
-# --- PANEL BOCZNY (USTAWIENIA GLOBALNE) ---
+# --- PANEL BOCZNY (USTAWIENIA NORM) ---
 with st.sidebar:
-    st.header("⚙️ Start Tygodnia")
-    zapas_start = st.number_input("Zapas w Poniedziałek rano (L):", value=50000, step=1000)
+    st.header("⚙️ Normy Zakładowe")
+    st.markdown("Ustaw limity alarmowe dla zakładu:")
+    cel_woda = st.number_input("Cel: Max L wody na 1L mleka", value=2.5, step=0.1)
+    limit_ph_min = st.number_input("Min pH zrzutu", value=6.5, step=0.1)
+    limit_ph_max = st.number_input("Max pH zrzutu", value=9.0, step=0.1)
+    limit_chzt = st.number_input("Max ChZT (mg/L) przed oczyszczalnią", value=3000, step=100)
+
+# --- WPROWADZANIE DANYCH ---
+st.subheader("📝 Wprowadź dane z dzisiejszej doby")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### 🚰 Zużycie Wody i Produkcja")
+    woda_m3 = st.number_input("Zużycie wody (m³ z wodomierza główn.)", value=500.0, step=10.0)
+    mleko_l = st.number_input("Przerobione mleko w tej dobie (L)", value=250000, step=5000)
     
-    st.markdown("---")
-    st.markdown("""
-    **Legenda statusów:**
-    * 🟢 **OK** (od 0 do -100 tys.) - bezpieczny zapas na awarię.
-    * 🟠 **NADWYŻKA** (> 0) - Odpal dodatkową linię lub zwiększ warki!
-    * 🔴 **BRAK MLEKA** (< -100 tys.) - Zbyt duża produkcja, zdejmij warki!
-    """)
+    # Przeliczenie m3 na litry
+    woda_l = woda_m3 * 1000
+    
+    # Wyliczenie KPI (Wskaźnik wody)
+    if mleko_l > 0:
+        wskaznik_wody = woda_l / mleko_l
+    else:
+        wskaznik_wody = 0
 
-dni_tygodnia = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+with col2:
+    st.markdown("### ☢️ Parametry Ścieków (Podczyszczalnia)")
+    scieki_m3 = st.number_input("Ilość zrzuconych ścieków (m³)", value=480.0, step=10.0)
+    ph_sciekow = st.slider("Średnie pH ścieków", min_value=0.0, max_value=14.0, value=7.5, step=0.1)
+    chzt_sciekow = st.number_input("Wynik ChZT (mg/L)", value=2100, step=50)
+    temp_sciekow = st.number_input("Temperatura ścieku (°C)", value=22.0, step=1.0)
 
-# Zmienna przechowująca zapas "przechodzący" z dnia na dzień
-zapas_obecny = zapas_start
-raport_tygodniowy = []
-
-# --- PĘTLA PO DNIACH TYGODNIA ---
-for i, dzien in enumerate(dni_tygodnia):
-    # Domyślnie rozwijamy tylko Poniedziałek, resztę można kliknąć
-    with st.expander(f"📅 {dzien} (Zapas startowy: {int(zapas_obecny):,} L)".replace(",", " "), expanded=(i==0)):
-        
-        st.markdown("#### 📥 Podaż mleka")
-        c1, c2, c3 = st.columns(3)
-        dostawy = c1.number_input("Dostawy mleka (L):", value=600000, step=1000, key=f"dost_{i}")
-        smietanka = c2.number_input("Odbiór Śmietanki (L):", value=0, step=1000, key=f"smiet_{i}")
-        bel = c3.number_input("Odbiór Bel (L):", value=0, step=1000, key=f"bel_{i}")
-        
-        mleko_dostepne = zapas_obecny + dostawy - smietanka - bel
-
-        st.markdown("#### 🧀 Wybór aktywnych linii i warów")
-        p1, p2, p3 = st.columns(3)
-        
-        # CHEDDAR
-        with p1:
-            ch_on = st.checkbox("🧀 Linia Cheddar", value=True, key=f"ch_on_{i}")
-            if ch_on:
-                ch_typ = st.selectbox("Wariant Cheddar:", ["40", "50"], key=f"ch_typ_{i}")
-                ch_wary = st.number_input("Ilość warów (Cheddar):", min_value=0, value=19, key=f"ch_w_{i}")
-                zuzycie_ch = ch_wary * ZUZYCIE_WAR["Cheddar"][ch_typ]
-            else:
-                zuzycie_ch = 0
-                
-        # BERTSCH
-        with p2:
-            be_on = st.checkbox("🧀 Linia Bertsch", value=True, key=f"be_on_{i}")
-            if be_on:
-                be_typ = st.selectbox("Wariant Bertsch:", ["30", "45", "50"], key=f"be_typ_{i}")
-                be_wary = st.number_input("Ilość warów (Bertsch):", min_value=0, value=15, key=f"be_w_{i}")
-                zuzycie_be = be_wary * ZUZYCIE_WAR["Bertsch"][be_typ]
-            else:
-                zuzycie_be = 0
-
-        # MOZZARELLA
-        with p3:
-            mo_on = st.checkbox("🧀 Linia Mozzarella", value=True, key=f"mo_on_{i}")
-            if mo_on:
-                # Mozzarella ma tylko jeden wariant z podanych danych (Standard)
-                mo_wary = st.number_input("Ilość warów (Mozzarella):", min_value=0, value=18, key=f"mo_w_{i}")
-                zuzycie_mo = mo_wary * ZUZYCIE_WAR["Mozzarella"]["Standard"]
-            else:
-                zuzycie_mo = 0
-
-        # OBLICZENIA DZIENNE
-        zuzycie_dzis = zuzycie_ch + zuzycie_be + zuzycie_mo
-        zapas_koncowy = mleko_dostepne - zuzycie_dzis
-
-        # STATUS ZAPASU
-        if zapas_koncowy > CEL_ZAPASU_MAX:
-            status = "🟠 NADWYŻKA (Zwiększ produkcję)"
-            color = "#e65100"
-        elif zapas_koncowy < CEL_ZAPASU_MIN:
-            status = "🔴 BRAK MLEKA (Zmniejsz produkcję)"
-            color = "#b71c1c"
-        else:
-            status = "🟢 IDEALNIE (Bezpieczny minus)"
-            color = "#2e7d32"
-
-        st.markdown(f"""
-            <div style="background-color:#f8f9fa; padding:10px; border-radius:5px; border-left: 5px solid {color}; margin-top:15px;">
-                <span style="font-size:16px;">Zużycie całkowite w tym dniu: <b>{int(zuzycie_dzis):,} L</b></span><br>
-                <span style="font-size:18px;">Przewidywany zapas na jutro: <b style="color:{color};">{int(zapas_koncowy):,} L</b> ({status})</span>
-            </div>
-        """.replace(",", " "), unsafe_allow_html=True)
-
-        # DODAWANIE DO RAPORTU
-        raport_tygodniowy.append({
-            "Dzień": dzien,
-            "Zapas rano (L)": f"{int(zapas_obecny):,}".replace(",", " "),
-            "Dostawy Netto (L)": f"{int(dostawy - smietanka - bel):,}".replace(",", " "),
-            "Aktywne Linie": f"{'Ch ' if ch_on else ''}{'Be ' if be_on else ''}{'Mo' if mo_on else ''}",
-            "Zużycie łączne (L)": f"{int(zuzycie_dzis):,}".replace(",", " "),
-            "Zapas końcowy (L)": int(zapas_koncowy), # Int dla formatowania Pandas
-            "Status": status
-        })
-
-        # Przeniesienie zapasu na kolejny dzień
-        zapas_obecny = zapas_koncowy
-
-# --- TABELA PODSUMOWUJĄCA CAŁY TYDZIEŃ ---
 st.divider()
-st.subheader("📊 Tygodniowe podsumowanie zapasów mleka")
 
-df_raport = pd.DataFrame(raport_tygodniowy)
+# --- WIZUALIZACJA I KONTROLA KPI ---
+st.subheader("📊 Raport Dobowy i Alerty")
 
-# Funkcja kolorująca wiersze w tabeli na podstawie statusu
-def style_status(val):
-    if "NADWYŻKA" in val:
-        return 'background-color: #fff3e0; color: #e65100; font-weight: bold;'
-    elif "BRAK" in val:
-        return 'background-color: #ffebee; color: #b71c1c; font-weight: bold;'
-    elif "IDEALNIE" in val:
-        return 'background-color: #e8f5e9; color: #2e7d32; font-weight: bold;'
-    return ''
+r1, r2, r3 = st.columns(3)
 
-# Formatowanie zapasu końcowego do wyświetlenia z odstępami
-df_raport['Zapas końcowy (L)'] = df_raport['Zapas końcowy (L)'].apply(lambda x: f"{x:,}".replace(",", " "))
+# 1. KONTROLA ZUŻYCIA WODY
+with r1:
+    if wskaznik_wody <= cel_woda:
+        st.markdown(f"""
+            <div class="success-box">
+                <div class="metric-title">Zużycie Wody (L wody / 1L mleka)</div>
+                <div class="metric-value">{wskaznik_wody:.2f} L</div>
+                <div style="font-size: 12px; margin-top:5px;">✅ Cel osiągnięty (< {cel_woda})</div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+            <div class="alert-box">
+                <div class="metric-title">Zużycie Wody (L wody / 1L mleka)</div>
+                <div class="metric-value">{wskaznik_wody:.2f} L</div>
+                <div style="font-size: 12px; margin-top:5px;">⚠️ Zbyt duże zużycie! (Cel: {cel_woda})</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-st.dataframe(df_raport.style.applymap(style_status, subset=['Status']), use_container_width=True, hide_index=True)
+# 2. KONTROLA pH ŚCIEKÓW
+with r2:
+    if limit_ph_min <= ph_sciekow <= limit_ph_max:
+        st.markdown(f"""
+            <div class="success-box">
+                <div class="metric-title">Odczyn pH Ścieków</div>
+                <div class="metric-value">{ph_sciekow:.1f}</div>
+                <div style="font-size: 12px; margin-top:5px;">✅ W normie zakładowej</div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+            <div class="alert-box">
+                <div class="metric-title">Odczyn pH Ścieków</div>
+                <div class="metric-value">{ph_sciekow:.1f}</div>
+                <div style="font-size: 12px; margin-top:5px;">🚨 RYZYKO KAR / AWARII BIOLOGII!</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+# 3. KONTROLA ŁADUNKU (ChZT)
+with r3:
+    if chzt_sciekow <= limit_chzt:
+        st.markdown(f"""
+            <div class="success-box">
+                <div class="metric-title">Ładunek ChZT</div>
+                <div class="metric-value">{chzt_sciekow} mg/L</div>
+                <div style="font-size: 12px; margin-top:5px;">✅ Bezpiecznie dla oczyszczalni</div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+            <div class="warning-box">
+                <div class="metric-title">Ładunek ChZT</div>
+                <div class="metric-value">{chzt_sciekow} mg/L</div>
+                <div style="font-size: 12px; margin-top:5px;">⚠️ Przeciążenie! (Zrzut serwatki/mleka?)</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+# --- ASYSTENT GŁÓWNEGO TECHNOLOGA / KIEROWNIKA ---
+st.markdown("<br>", unsafe_allow_html=True)
+st.subheader("🤖 Wnioski Asystenta dla Kierownika")
+
+wnioski = []
+if wskaznik_wody > cel_woda:
+    wnioski.append("💧 **STRATY WODY:** Zużywasz za dużo wody w stosunku do przerabianego mleka. Sprawdź, czy mycia CIP na linii Bertsch/Cheddar nie są wydłużone, lub czy na dziale nikt nie zostawia 'węża z wodą' w kratce.")
+    
+if ph_sciekow < limit_ph_min:
+    wnioski.append("🧪 **ALARM KWAŚNY (pH):** Do oczyszczalni trafił zrzut mocno kwasowy. Zwróć uwagę, czy na myjce nie doszło do wycieku kwasu azotowego podczas mycia kwaśnego sprzętu.")
+elif ph_sciekow > limit_ph_max:
+    wnioski.append("🧪 **ALARM ZASADOWY (pH):** Do oczyszczalni trafił zrzut mocno zasadowy. Sprawdź dawkowanie ługu w stacji CIP.")
+
+if chzt_sciekow > limit_chzt:
+    wnioski.append("🧀 **STRATY SUROWCA:** Bardzo wysokie ChZT! Oznacza to, że do ścieków przedostało się dużo białka lub tłuszczu. Gdzieś na hali nastąpił duży zrzut serwatki, popłuczyny z mleka nie zostały odzyskane, lub pękł zbiornik. Natychmiast poinstruuj operatorów, żeby nie lali mleka w kratki!")
+
+if not wnioski:
+    st.success("Wszystkie parametry w normie. Oczyszczalnia pracuje stabilnie, a zużycie wody jest optymalne!")
+else:
+    for w in wnioski:
+        st.warning(w)
