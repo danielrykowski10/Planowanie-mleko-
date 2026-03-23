@@ -1,221 +1,148 @@
 import streamlit as st
-import pandas as pd
-import datetime
-import json
 import os
 
 # --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Radar Kadrowy - Kontrola Nieobecności", layout="wide")
+st.set_page_config(page_title="Holistyczne Piękno | Terapia Twarzy", page_icon="🌸", layout="wide")
 
-# --- PLIKI BAZY DANYCH ---
-PLIK_PRACOWNICY = "dane_pracownicy.json"
-PLIK_NIEOBECNOSCI = "dane_nieobecnosci.json"
-
-def wczytaj_dane(plik):
-    if os.path.exists(plik):
-        try:
-            with open(plik, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
-    return []
-
-def zapisz_dane(plik, dane):
-    with open(plik, "w", encoding="utf-8") as f:
-        json.dump(dane, f, ensure_ascii=False, indent=4)
-
-if 'pracownicy' not in st.session_state:
-    st.session_state.pracownicy = wczytaj_dane(PLIK_PRACOWNICY)
-if 'nieobecnosci' not in st.session_state:
-    st.session_state.nieobecnosci = wczytaj_dane(PLIK_NIEOBECNOSCI)
-
-# --- STYLIZACJA ---
+# --- STYLIZACJA (Estetyka SPA / Beauty) ---
 st.markdown("""
     <style>
-        .l4-box { background-color: #ffebee; border: 1px solid #ffcdd2; border-radius: 8px; padding: 10px; color: #b71c1c; font-weight: bold; margin-bottom: 5px;}
-        .urlop-box { background-color: #e3f2fd; border: 1px solid #bbdefb; border-radius: 8px; padding: 10px; color: #1565c0; font-weight: bold; margin-bottom: 5px;}
-        .uz-box { background-color: #fff3e0; border: 1px solid #ffcc80; border-radius: 8px; padding: 10px; color: #e65100; font-weight: bold; margin-bottom: 5px;}
+        .spa-title { color: #8a6a5c; font-family: 'Georgia', serif; text-align: center; font-size: 40px; font-weight: normal; margin-bottom: 10px; }
+        .spa-subtitle { color: #a98d80; text-align: center; font-size: 20px; font-style: italic; margin-bottom: 40px; }
+        .concept-box { background-color: #fdfaf6; border-left: 5px solid #d4c1b3; padding: 20px; margin-bottom: 20px; border-radius: 5px; color: #5a4a42; }
+        .treatment-box { background-color: #f9f5f0; border: 1px solid #eaddd5; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 2px 2px 15px rgba(0,0,0,0.05); height: 100%;}
+        .problem-title { color: #8a6a5c; font-size: 24px; font-family: 'Georgia', serif; border-bottom: 1px solid #eaddd5; padding-bottom: 10px; margin-bottom: 15px;}
+        h1, h2, h3 { color: #8a6a5c; font-family: 'Georgia', serif; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- ZAKŁADKI ---
-tab1, tab2, tab3 = st.tabs(["🚨 Kto dzisiaj nie pracuje?", "📅 Zgłoś Nieobecność", "👥 Baza Pracowników i Limity"])
+# --- BAZA PROBLEMÓW I KATALOGI NA PLIKI ---
+PROBLEMY = {
+    "Opadający owal twarzy (tzw. chomiki)": {
+        "opis": "Z wiekiem i pod wpływem grawitacji tkanki opadają. Często winne są też napięcia w obrębie dekoltu i szyi, które 'ciągną' twarz w dół.",
+        "terapia": "Facemodeling i Kobido świetnie unoszą owal, pracując na głębokich strukturach mięśniowych i powięziowych, przywracając tkankom elastyczność."
+    },
+    "Bruksizm / Napięta żuchwa": {
+        "opis": "Zaciskanie zębów w nocy to reakcja na stres. Powoduje to przerost mięśni żwaczy (twarz staje się kwadratowa) i silne bóle głowy.",
+        "terapia": "Masaż transbukalny (wewnątrz ust) w ramach Facemodelingu idealnie rozluźnia żwacze, przynosząc natychmiastową ulgę i wysmuklając rysy."
+    },
+    "Lwia zmarszczka i napięte czoło": {
+        "opis": "To nie tylko problem skóry, ale przede wszystkim spiętego mięśnia marszczącego brwi i czepca ścięgnistego na głowie.",
+        "terapia": "Połączenie Head Spa (rozluźnienie głowy) i głębokich technik liftingujących rozprostowuje czoło w sposób naturalny, bez blokowania mimiki."
+    },
+    "Szara, zmęczona cera i obrzęki": {
+        "opis": "Zastoje limfatyczne sprawiają, że twarz jest opuchnięta (szczególnie rano), a skóra niedotleniona.",
+        "terapia": "Kobido i drenaż limfatyczny przyspieszają krążenie krwi i limfy. Skóra odzyskuje naturalny 'glow', a opuchlizna znika."
+    },
+    "Przemęczenie i stres (Potrzeba głębokiego relaksu)": {
+        "opis": "Przebodźcowanie układu nerwowego odbija się na naszym wyglądzie i samopoczuciu.",
+        "terapia": "Head Spa to rytuał, który przez masaż głowy, karku i aromaterapię głęboko resetuje układ nerwowy."
+    }
+}
+
+# Tworzenie folderów na zdjęcia/filmy dla każdego problemu
+BAZA_MEDIA = "media_spa"
+os.makedirs(BAZA_MEDIA, exist_ok=True)
+for p in PROBLEMY.keys():
+    # Zamieniamy spacje i znaki specjalne na bezpieczne nazwy folderów
+    safe_name = "".join([c if c.isalnum() else "_" for c in p])
+    os.makedirs(os.path.join(BAZA_MEDIA, safe_name), exist_ok=True)
+
+# --- STRUKTURA APLIKACJI ---
+st.markdown("<div class='spa-title'>Naturalne Odmładzanie i Terapia</div>", unsafe_allow_html=True)
+st.markdown("<div class='spa-subtitle'>Odkryj potęgę dotyku, która uzdrawia ciało i wycisza umysł.</div>", unsafe_allow_html=True)
+
+tab1, tab2, tab3 = st.tabs(["🌿 Dlaczego Terapia Manualna?", "🔍 Znajdź Swój Problem", "📸 Panel Terapeuty (Dodaj Media)"])
 
 # ==========================================
-# ZAKŁADKA 1: PULPIT (KTO NIE PRACUJE)
+# ZAKŁADKA 1: EDUKACJA (DLA KLIENTKI)
 # ==========================================
 with tab1:
-    st.title("🚨 Stan Osobowy na Dziś")
-    dzisiaj = datetime.date.today()
-    st.subheader(f"Data: {dzisiaj.strftime('%d.%m.%Y')}")
-    
-    if not st.session_state.nieobecnosci:
-        st.success("Wszyscy w pracy! Brak zarejestrowanych nieobecności na ten moment.")
-    else:
-        braki_dzisiaj = []
-        for n in st.session_state.nieobecnosci:
-            data_od = datetime.datetime.strptime(n['Data_od'], "%Y-%m-%d").date()
-            data_do = datetime.datetime.strptime(n['Data_do'], "%Y-%m-%d").date()
-            if data_od <= dzisiaj <= data_do:
-                braki_dzisiaj.append(n)
-                
-        if not braki_dzisiaj:
-            st.success("✅ Komplet załogi! Nikt z zapisanych nie jest dziś na urlopie ani L4.")
-        else:
-            col_ser, col_apar, col_konf = st.columns(3)
-            
-            with col_ser: st.markdown("### 🧀 Serownia")
-            with col_apar: st.markdown("### 🥛 Aparatownia")
-            with col_konf: st.markdown("### 📦 Konfekcja / Magazyn")
-            
-            for n in braki_dzisiaj:
-                # Szukamy działu pracownika
-                dzial = "Inne"
-                for p in st.session_state.pracownicy:
-                    if p['Imie_Nazwisko'] == n['Pracownik']:
-                        dzial = p['Dzial']
-                        break
-                
-                # Formatowanie kafelka w zależności od typu
-                if n['Typ'] == "L4 (Chorobowe)":
-                    klasa = "l4-box"
-                    ikona = "🤒"
-                elif n['Typ'] in ["Urlop na żądanie (UŻ)", "Nieobecność nieusprawiedliwiona"]:
-                    klasa = "uz-box"
-                    ikona = "⚠️"
-                else:
-                    klasa = "urlop-box"
-                    ikona = "🌴"
-                    
-                kafelek = f"<div class='{klasa}'>{ikona} {n['Pracownik']}<br><small>{n['Typ']} (do {n['Data_do']})</small></div>"
-                
-                if dzial == "Serownia":
-                    with col_ser: st.markdown(kafelek, unsafe_allow_html=True)
-                elif dzial == "Aparatownia":
-                    with col_apar: st.markdown(kafelek, unsafe_allow_html=True)
-                else:
-                    with col_konf: st.markdown(kafelek, unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.markdown("""
+            <div class='concept-box'>
+                <h3>Czym jest Terapia Manualna Twarzy?</h3>
+                <p>To znacznie więcej niż zwykły masaż relaksacyjny. To głęboka praca na <b>mięśniach, powięziach i kościach twarzoczaszki</b>.</p>
+                <p>Medycyna estetyczna często jedynie "maskuje" problem (np. wypełniając zmarszczkę kwasem lub blokując mięsień botoksem). My szukamy <b>przyczyny</b>. Zmarszczki i opadanie skóry to najczęściej efekt napięć w ciele, stresu, złej postawy czy zaciskania zębów.</p>
+                <p>Przez odpowiednie techniki uwalniamy te napięcia, przywracając twarzy młodość, symetrię i blask w 100% naturalny sposób.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    with c2:
+        st.markdown("### Poznaj nasze metody:")
+        t_col1, t_col2, t_col3 = st.columns(3)
+        with t_col1:
+            st.markdown("<div class='treatment-box'><b>💆‍♀️ Masaż Kobido</b><br><br><small>Japoński lifting twarzy. Intensywny, szybki, dający niesamowity efekt uniesienia i odżywienia tkanek.</small></div>", unsafe_allow_html=True)
+        with t_col2:
+            st.markdown("<div class='treatment-box'><b>👐 Facemodeling</b><br><br><small>Multiterapia łącząca osteopatię, drenaż i masaż wnętrza ust. Modeluje i rzeźbi twarz od nowa.</small></div>", unsafe_allow_html=True)
+        with t_col3:
+            st.markdown("<div class='treatment-box'><b>🛀 Head Spa</b><br><br><small>Głęboki relaks, pielęgnacja skóry głowy i masaż karku. Uwalnia napięcia blokujące swobodny przepływ krwi do twarzy.</small></div>", unsafe_allow_html=True)
 
 # ==========================================
-# ZAKŁADKA 2: REJESTRACJA NIEOBECNOŚCI
+# ZAKŁADKA 2: ROZWIĄŻ SWÓJ PROBLEM
 # ==========================================
 with tab2:
-    st.title("📅 Rejestracja Urlopów i Zwolnień")
+    st.markdown("### Co sprawia Ci największy dyskomfort?")
+    wybrany_problem = st.selectbox("Wybierz obszar do pracy:", list(PROBLEMY.keys()))
     
-    if not st.session_state.pracownicy:
-        st.warning("Najpierw dodaj pracowników w zakładce 'Baza Pracowników'!")
-    else:
-        lista_pracownikow = [p['Imie_Nazwisko'] for p in st.session_state.pracownicy]
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    col_opis, col_media = st.columns([1, 1.5])
+    
+    with col_opis:
+        st.markdown(f"<div class='problem-title'>{wybrany_problem}</div>", unsafe_allow_html=True)
+        st.markdown(f"**Skąd to się bierze?**<br>{PROBLEMY[wybrany_problem]['opis']}", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.success(f"🌿 **Nasze rozwiązanie:**\n\n{PROBLEMY[wybrany_problem]['terapia']}")
         
-        with st.form("form_nieobecnosc", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                pracownik = st.selectbox("Pracownik", lista_pracownikow)
-                typ_nieobecnosci = st.selectbox("Rodzaj nieobecności", [
-                    "Urlop wypoczynkowy", 
-                    "L4 (Chorobowe)", 
-                    "Urlop na żądanie (UŻ)", 
-                    "Urlop okolicznościowy", 
-                    "Opieka nad dzieckiem",
-                    "Nieobecność nieusprawiedliwiona"
-                ])
-                uwagi = st.text_input("Komentarz / Uwagi (opcjonalnie)")
-                
-            with col2:
-                data_od = st.date_input("Od kiedy?", datetime.date.today())
-                data_do = st.date_input("Do kiedy (włącznie)?", datetime.date.today())
-                
-                # Ręczne wpisanie ilości dni (bo produkcja często pracuje w weekendy/brygady)
-                dni_do_sciagniecia = st.number_input("Ile DNI ROBOCZYCH ściągnąć z puli?", min_value=0, value=1, step=1, help="Ważne dla brygadówki! Jeśli pracownik miał mieć 2 dni pracujące w trakcie 7 dni L4, wpisz 2.")
-                
-            zapisz_urlop = st.form_submit_button("Zatwierdź nieobecność", type="primary")
-            
-            if zapisz_urlop:
-                if data_do < data_od:
-                    st.error("Data zakończenia nie może być wcześniejsza niż data rozpoczęcia!")
-                else:
-                    nowa_nieob = {
-                        "Pracownik": pracownik,
-                        "Typ": typ_nieobecnosci,
-                        "Data_od": data_od.strftime("%Y-%m-%d"),
-                        "Data_do": data_do.strftime("%Y-%m-%d"),
-                        "Dni_robocze": dni_do_sciagniecia,
-                        "Uwagi": uwagi
-                    }
-                    st.session_state.nieobecnosci.append(nowa_nieob)
-                    zapisz_dane(PLIK_NIEOBECNOSCI, st.session_state.nieobecnosci)
-                    st.success(f"Dodano nieobecność dla {pracownik}!")
-                    st.rerun()
+    with col_media:
+        st.markdown("### 📸 Metamorfozy i Porady Wideo")
+        
+        # Pobieranie plików z folderu odpowiadającego problemowi
+        safe_name = "".join([c if c.isalnum() else "_" for c in wybrany_problem])
+        folder_path = os.path.join(BAZA_MEDIA, safe_name)
+        
+        pliki = os.listdir(folder_path) if os.path.exists(folder_path) else []
+        
+        if not pliki:
+            st.info("Brak wgranych materiałów dla tego problemu. Terapeuta może je dodać w zakładce 'Panel Terapeuty'.")
+        else:
+            # Tworzymy siatkę na zdjęcia/filmy
+            grid_cols = st.columns(2)
+            for idx, plik in enumerate(pliki):
+                sciezka_pliku = os.path.join(folder_path, plik)
+                with grid_cols[idx % 2]:
+                    # Rozpoznawanie obrazu vs wideo po rozszerzeniu
+                    if plik.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                        st.image(sciezka_pliku, use_container_width=True, caption=plik)
+                    elif plik.lower().endswith(('.mp4', '.mov')):
+                        st.video(sciezka_pliku)
 
 # ==========================================
-# ZAKŁADKA 3: BAZA PRACOWNIKÓW
+# ZAKŁADKA 3: PANEL TERAPEUTY (WGRYWANIE ZDJĘĆ/WIDEO)
 # ==========================================
 with tab3:
-    st.title("👥 Twój Zespół i Limity Urlopowe")
+    st.markdown("### 🛠️ Zarządzanie Bazą Wiedzy i Metamorfozami")
+    st.markdown("Wybierz problem i wgraj zdjęcia z telefonu lub komputera (np. efekty Przed/Po, filmy z ćwiczeniami automasażu).")
     
-    with st.expander("➕ Dodaj nowego pracownika", expanded=False):
-        with st.form("form_pracownik", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            with c1: imie_nazw = st.text_input("Imię i Nazwisko")
-            with c2: dzial = st.selectbox("Dział / Obszar", ["Serownia", "Aparatownia", "Konfekcja", "Magazyn", "Inne"])
-            with c3: pula_urlopu = st.number_input("Roczna pula urlopu (dni)", min_value=0, value=26, step=1)
+    with st.form("upload_form", clear_on_submit=True):
+        problem_docelowy = st.selectbox("Przypisz materiał do problemu:", list(PROBLEMY.keys()))
+        wgrane_pliki = st.file_uploader("Wybierz zdjęcia lub wideo", type=["jpg", "jpeg", "png", "mp4", "mov"], accept_multiple_files=True)
+        
+        submit_btn = st.form_submit_button("Wgraj materiały", type="primary")
+        
+        if submit_btn and wgrane_pliki:
+            safe_name = "".join([c if c.isalnum() else "_" for c in problem_docelowy])
+            folder_path = os.path.join(BAZA_MEDIA, safe_name)
             
-            if st.form_submit_button("Dodaj do zespołu"):
-                if imie_nazw != "":
-                    st.session_state.pracownicy.append({
-                        "Imie_Nazwisko": imie_nazw,
-                        "Dzial": dzial,
-                        "Pula_roczna": pula_urlopu
-                    })
-                    zapisz_dane(PLIK_PRACOWNICY, st.session_state.pracownicy)
-                    st.success(f"Dodano pracownika: {imie_nazw}")
-                    st.rerun()
-                else:
-                    st.error("Podaj imię i nazwisko!")
+            for f in wgrane_pliki:
+                file_path = os.path.join(folder_path, f.name)
+                with open(file_path, "wb") as f_out:
+                    f_out.write(f.getbuffer())
+                    
+            st.success(f"Pomyślnie wgrano {len(wgrane_pliki)} plik(ów) do kategorii '{problem_docelowy}'!")
+            st.rerun()
 
-    if st.session_state.pracownicy:
-        # Obliczanie wykorzystanego urlopu
-        raport_kadrowy = []
-        for p in st.session_state.pracownicy:
-            wykorzystany_urlop = 0
-            for n in st.session_state.nieobecnosci:
-                if n['Pracownik'] == p['Imie_Nazwisko'] and n['Typ'] in ["Urlop wypoczynkowy", "Urlop na żądanie (UŻ)"]:
-                    wykorzystany_urlop += n['Dni_robocze']
-            
-            pozostalo = p['Pula_roczna'] - wykorzystany_urlop
-            
-            raport_kadrowy.append({
-                "Pracownik": p['Imie_Nazwisko'],
-                "Dział": p['Dzial'],
-                "Pula roczna": p['Pula_roczna'],
-                "Wykorzystany Urlop": wykorzystany_urlop,
-                "POZOSTAŁO DO WYKORZYSTANIA": pozostalo
-            })
-            
-        df_kadry = pd.DataFrame(raport_kadrowy)
-        
-        # Kolorowanie na czerwono, jeśli mało urlopu
-        def styl_urlop(val):
-            if isinstance(val, int) and val <= 5:
-                return 'background-color: #ffebee; color: #b71c1c; font-weight:bold;'
-            elif isinstance(val, int) and val > 15:
-                return 'background-color: #e8f5e9; color: #2e7d32;'
-            return ''
-            
-        st.markdown("### Stan Urlopów Wypoczynkowych")
-        st.dataframe(df_kadry.style.map(styl_urlop, subset=['POZOSTAŁO DO WYKORZYSTANIA']), use_container_width=True, hide_index=True)
-        
-        st.divider()
-        st.markdown("### 📋 Historia wszystkich nieobecności")
-        if st.session_state.nieobecnosci:
-            df_nieob = pd.DataFrame(st.session_state.nieobecnosci)
-            df_nieob = df_nieob.sort_values(by="Data_od", ascending=False)
-            st.dataframe(df_nieob, use_container_width=True, hide_index=True)
-            
-            # Przycisk czyszczenia
-            if st.button("🗑️ Wyczyść historię nieobecności"):
-                st.session_state.nieobecnosci = []
-                zapisz_dane(PLIK_NIEOBECNOSCI, [])
-                st.rerun()
-    else:
-        st.info("Brak pracowników. Dodaj pierwszą osobę z zespołu powyżej.")
+    st.divider()
+    st.markdown("💡 *Wskazówka: Nagraj krótkie, 15-sekundowe wideo, jak poprawnie rozmasować sobie żwacze w domu, wgraj je tutaj, a Twoje klientki będą miały do tego dostęp po wejściu na stronę!*")
