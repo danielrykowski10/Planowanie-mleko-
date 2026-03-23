@@ -51,4 +51,39 @@ class AkademiaOdkrywcy(ctk.CTk):
             else:
                 # Zapisywanie błędu do historii
                 self.historia_bledow.append({
-                    "data": datetime.now().
+                    "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "przedmiot": "Matematyka",
+                    "pytanie": pytanie,
+                    "zle": user_input,
+                    "poprawne": poprawna
+                })
+                self.ekran_glowny()
+        except ValueError:
+            pass
+
+    def panel_rodzica(self):
+        self.wyczysc_okno()
+        ctk.CTkLabel(self, text="Historia błędów dziecka", font=("Arial", 20, "bold")).pack(pady=10)
+        
+        textbox = ctk.CTkTextbox(self, width=500, height=300)
+        textbox.pack(pady=10)
+        
+        if not self.historia_bledow:
+            textbox.insert("0.0", "Brak błędów! Dziecko radzi sobie świetnie.")
+        else:
+            for wpis in self.historia_bledow:
+                info = f"[{wpis['data']}] {wpis['przedmiot']}\n"
+                info += f"Pytanie: {wpis['pytanie']}\n"
+                info += f"Dziecko wpisało: {wpis['zle']} (Poprawnie: {wpis['poprawne']})\n"
+                info += "-"*30 + "\n"
+                textbox.insert("end", info)
+        
+        ctk.CTkButton(self, text="Powrót", command=self.ekran_glowny).pack(pady=10)
+
+    def wyczysc_okno(self):
+        for widget in self.winfo_children():
+            widget.destroy()
+
+if __name__ == "__main__":
+    app = AkademiaOdkrywcy()
+    app.mainloop()
