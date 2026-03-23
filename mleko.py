@@ -1,12 +1,3 @@
-Świetna decyzja, Kierowniku! Połączenie zwinnych, prostych w obsłudze aplikacji na hali produkcyjnej z potężnym systemem ERP w biurze to obecnie złoty standard w nowoczesnych zakładach.
-
-Operatorzy na serowni i aparatowni nienawidzą przeklikiwać się przez skomplikowane okienka systemów ERP. Mają mokre ręce, mało czasu i chcą po prostu wpisać "100 tys. litrów, 15 ton sera" i wrócić do pracy. Nasza aplikacja im to umożliwia, a Ty na koniec dnia lub zmiany – jednym kliknięciem – generujesz z tego plik, który bez problemu "połyka" HermesSQL lub dowolny inny system.
-
-Zaktualizowałem nasz kod Strażnika Uzysku. W panelu bocznym kierownika (w drugiej zakładce) pojawił się nowy przycisk: 📥 Pobierz dane dla ERP (CSV). Plik pobiera się w formacie przyjaznym dla Excela i systemów bazodanowych.
-
-Zaznacz wszystko u siebie, usuń i wklej ten kod:
-
-Python
 import streamlit as st
 import pandas as pd
 import datetime
