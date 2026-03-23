@@ -218,4 +218,4 @@ with tab3:
                 zapisz_dane(PLIK_NIEOBECNOSCI, [])
                 st.rerun()
     else:
-        st.info("Brak pracowników. Dodaj pierwszą osobę z zespołu powyżej."
+        st.info("Brak pracowników. Dodaj pierwszą osobę z zespołu powyżej.")
