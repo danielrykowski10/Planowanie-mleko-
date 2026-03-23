@@ -99,3 +99,113 @@ with mobile_col:
         st.markdown("<div class='mobile-container'>", unsafe_allow_html=True)
         st.markdown("<div class='main-title'>MR Therapy</div>", unsafe_allow_html=True)
         st.markdown("<div class='sub-title'>Odkryj piękno płynące z głębi ciała</div>", unsafe_allow_html=True)
+        
+        st.image("https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?q=80&w=800&auto=format&fit=crop", use_container_width=True)
+        st.markdown("<br><p style='color:#5C4D43; text-align:center;'>Twoja twarz to mapa emocji i napięć.<br>Zanim dobierzemy terapię, powiedz mi, czego dzisiaj potrzebujesz najbardziej?</p><br>", unsafe_allow_html=True)
+        
+        if st.button("Rozpocznij diagnozę ✨"):
+            idz_do_kroku(1)
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # EKRAN 1: WYBÓR PROBLEMU
+    elif st.session_state.krok == 1:
+        st.markdown("<div class='mobile-container'>", unsafe_allow_html=True)
+        st.markdown("<div class='main-title'>Z czym do mnie przychodzisz?</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sub-title'>Wybierz obszar, który sprawia Ci dyskomfort.</div>", unsafe_allow_html=True)
+        
+        for problem in PROBLEMY.keys():
+            if st.button(f"{PROBLEMY[problem]['ikona']} {problem}"):
+                st.session_state.wybrany_problem = problem
+                idz_do_kroku(2)
+                st.rerun()
+                
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("⬅ Wróć do początku"):
+            idz_do_kroku(0)
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # EKRAN 2: EDUKACJA I ROZWIĄZANIE
+    elif st.session_state.krok == 2:
+        prob = st.session_state.wybrany_problem
+        dane = PROBLEMY[prob]
+        
+        st.markdown("<div class='mobile-container'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='main-title'>{dane['ikona']} Zrozum swoje ciało</div>", unsafe_allow_html=True)
+        
+        st.markdown("### Dlaczego tak się dzieje?")
+        st.markdown(f"<div class='diagnoza-box'><i>{dane['diagnoza']}</i></div>", unsafe_allow_html=True)
+        
+        st.markdown("### Moja odpowiedź na Twój problem:")
+        st.markdown(f"""
+            <div class='terapia-box'>
+                <div class='terapia-nazwa'>{dane['terapia']}</div>
+                <p style='font-size: 15px;'>{dane['opis_terapii']}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Zobacz metamorfozy i efekty 📸"):
+            idz_do_kroku(3)
+            st.rerun()
+            
+        if st.button("⬅ Wybierz inny problem"):
+            idz_do_kroku(1)
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # EKRAN 3: MEDIA (PRZED/PO) I KONTAKT
+    elif st.session_state.krok == 3:
+        prob = st.session_state.wybrany_problem
+        st.markdown("<div class='mobile-container'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='main-title'>Efekty Terapii</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sub-title'>{PROBLEMY[prob]['terapia']}</div>", unsafe_allow_html=True)
+        
+        # Ładowanie zdjęć/wideo dla wybranego problemu
+        safe_name = "".join([c if c.isalnum() else "_" for c in prob])
+        folder_path = os.path.join(BAZA_MEDIA, safe_name)
+        pliki = os.listdir(folder_path) if os.path.exists(folder_path) else []
+        
+        if not pliki:
+            st.info("Tutaj pojawią się zdjęcia moich wspaniałych klientek przed i po terapii oraz instrukcje wideo automasażu.")
+        else:
+            for plik in pliki:
+                sciezka = os.path.join(folder_path, plik)
+                if plik.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                    st.image(sciezka, use_container_width=True, caption="Efekt po sesji")
+                elif plik.lower().endswith(('.mp4', '.mov')):
+                    st.video(sciezka)
+        
+        st.markdown("<br><hr style='border-top: 1px solid #E6DCD3;'><br>", unsafe_allow_html=True)
+        st.markdown("### Zadbaj o siebie już dziś")
+        st.markdown("<p style='color:#5C4D43;'>Twoje ciało zasługuje na uwolnienie. Zarezerwuj swój czas na regenerację.</p>", unsafe_allow_html=True)
+        
+        # Symulacja przycisku do Booksy / DM na Instagramie
+        st.markdown(f"<a href='https://www.instagram.com/mr__therapy_/' target='_blank' style='display:block; text-align:center; background-color:#8B7355; color:white; padding:15px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:18px;'>Napisz do mnie na IG i umów wizytę</a>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("⬅ Zacznij od początku"):
+            idz_do_kroku(0)
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# --- UKRYTY PANEL TERAPEUTY (Wgrywanie plików na bocznym pasku) ---
+with st.sidebar:
+    st.markdown("### 🛠️ Panel Właściciela (Ukryty)")
+    st.markdown("Dodaj tutaj materiały wideo i zdjęcia Przed/Po, które zobaczą klientki w Kroku 3.")
+    
+    with st.form("upload_beauty_form", clear_on_submit=True):
+        cel_problem = st.selectbox("Przypisz media do:", list(PROBLEMY.keys()))
+        pliki_upload = st.file_uploader("Wgraj zdjęcia/wideo", type=["jpg", "jpeg", "png", "mp4", "mov"], accept_multiple_files=True)
+        
+        if st.form_submit_button("Wgraj na serwer"):
+            if pliki_upload:
+                safe_name = "".join([c if c.isalnum() else "_" for c in cel_problem])
+                folder_path = os.path.join(BAZA_MEDIA, safe_name)
+                for f in pliki_upload:
+                    with open(os.path.join(folder_path, f.name), "wb") as f_out:
+                        f_out.write(f.getbuffer())
+                st.success("Materiały dodane! Klientki już je widzą.")
+                st.rerun()
