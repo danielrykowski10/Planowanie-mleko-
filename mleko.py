@@ -77,7 +77,145 @@ with tab1:
                         break
                 
                 # Formatowanie kafelka w zależności od typu
-                if n['Typ'] == "L
+                if n['Typ'] == "L4 (Chorobowe)":
+                    klasa = "l4-box"
+                    ikona = "🤒"
+                elif n['Typ'] in ["Urlop na żądanie (UŻ)", "Nieobecność nieusprawiedliwiona"]:
+                    klasa = "uz-box"
+                    ikona = "⚠️"
+                else:
+                    klasa = "urlop-box"
+                    ikona = "🌴"
+                    
+                kafelek = f"<div class='{klasa}'>{ikona} {n['Pracownik']}<br><small>{n['Typ']} (do {n['Data_do']})</small></div>"
+                
+                if dzial == "Serownia":
+                    with col_ser: st.markdown(kafelek, unsafe_allow_html=True)
+                elif dzial == "Aparatownia":
+                    with col_apar: st.markdown(kafelek, unsafe_allow_html=True)
+                else:
+                    with col_konf: st.markdown(kafelek, unsafe_allow_html=True)
+
+# ==========================================
+# ZAKŁADKA 2: REJESTRACJA NIEOBECNOŚCI
+# ==========================================
+with tab2:
+    st.title("📅 Rejestracja Urlopów i Zwolnień")
+    
+    if not st.session_state.pracownicy:
+        st.warning("Najpierw dodaj pracowników w zakładce 'Baza Pracowników'!")
+    else:
+        lista_pracownikow = [p['Imie_Nazwisko'] for p in st.session_state.pracownicy]
+        
+        with st.form("form_nieobecnosc", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                pracownik = st.selectbox("Pracownik", lista_pracownikow)
+                typ_nieobecnosci = st.selectbox("Rodzaj nieobecności", [
+                    "Urlop wypoczynkowy", 
+                    "L4 (Chorobowe)", 
+                    "Urlop na żądanie (UŻ)", 
+                    "Urlop okolicznościowy", 
+                    "Opieka nad dzieckiem",
+                    "Nieobecność nieusprawiedliwiona"
+                ])
+                uwagi = st.text_input("Komentarz / Uwagi (opcjonalnie)")
+                
+            with col2:
+                data_od = st.date_input("Od kiedy?", datetime.date.today())
+                data_do = st.date_input("Do kiedy (włącznie)?", datetime.date.today())
+                
+                # Ręczne wpisanie ilości dni (bo produkcja często pracuje w weekendy/brygady)
+                dni_do_sciagniecia = st.number_input("Ile DNI ROBOCZYCH ściągnąć z puli?", min_value=0, value=1, step=1, help="Ważne dla brygadówki! Jeśli pracownik miał mieć 2 dni pracujące w trakcie 7 dni L4, wpisz 2.")
+                
+            zapisz_urlop = st.form_submit_button("Zatwierdź nieobecność", type="primary")
             
-        styled_df = df_wyswietl.style.applymap(stylizuj_odchylenie, subset=['Odchylenie (L/kg)'])
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            if zapisz_urlop:
+                if data_do < data_od:
+                    st.error("Data zakończenia nie może być wcześniejsza niż data rozpoczęcia!")
+                else:
+                    nowa_nieob = {
+                        "Pracownik": pracownik,
+                        "Typ": typ_nieobecnosci,
+                        "Data_od": data_od.strftime("%Y-%m-%d"),
+                        "Data_do": data_do.strftime("%Y-%m-%d"),
+                        "Dni_robocze": dni_do_sciagniecia,
+                        "Uwagi": uwagi
+                    }
+                    st.session_state.nieobecnosci.append(nowa_nieob)
+                    zapisz_dane(PLIK_NIEOBECNOSCI, st.session_state.nieobecnosci)
+                    st.success(f"Dodano nieobecność dla {pracownik}!")
+                    st.rerun()
+
+# ==========================================
+# ZAKŁADKA 3: BAZA PRACOWNIKÓW
+# ==========================================
+with tab3:
+    st.title("👥 Twój Zespół i Limity Urlopowe")
+    
+    with st.expander("➕ Dodaj nowego pracownika", expanded=False):
+        with st.form("form_pracownik", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1: imie_nazw = st.text_input("Imię i Nazwisko")
+            with c2: dzial = st.selectbox("Dział / Obszar", ["Serownia", "Aparatownia", "Konfekcja", "Magazyn", "Inne"])
+            with c3: pula_urlopu = st.number_input("Roczna pula urlopu (dni)", min_value=0, value=26, step=1)
+            
+            if st.form_submit_button("Dodaj do zespołu"):
+                if imie_nazw != "":
+                    st.session_state.pracownicy.append({
+                        "Imie_Nazwisko": imie_nazw,
+                        "Dzial": dzial,
+                        "Pula_roczna": pula_urlopu
+                    })
+                    zapisz_dane(PLIK_PRACOWNICY, st.session_state.pracownicy)
+                    st.success(f"Dodano pracownika: {imie_nazw}")
+                    st.rerun()
+                else:
+                    st.error("Podaj imię i nazwisko!")
+
+    if st.session_state.pracownicy:
+        # Obliczanie wykorzystanego urlopu
+        raport_kadrowy = []
+        for p in st.session_state.pracownicy:
+            wykorzystany_urlop = 0
+            for n in st.session_state.nieobecnosci:
+                if n['Pracownik'] == p['Imie_Nazwisko'] and n['Typ'] in ["Urlop wypoczynkowy", "Urlop na żądanie (UŻ)"]:
+                    wykorzystany_urlop += n['Dni_robocze']
+            
+            pozostalo = p['Pula_roczna'] - wykorzystany_urlop
+            
+            raport_kadrowy.append({
+                "Pracownik": p['Imie_Nazwisko'],
+                "Dział": p['Dzial'],
+                "Pula roczna": p['Pula_roczna'],
+                "Wykorzystany Urlop": wykorzystany_urlop,
+                "POZOSTAŁO DO WYKORZYSTANIA": pozostalo
+            })
+            
+        df_kadry = pd.DataFrame(raport_kadrowy)
+        
+        # Kolorowanie na czerwono, jeśli mało urlopu
+        def styl_urlop(val):
+            if isinstance(val, int) and val <= 5:
+                return 'background-color: #ffebee; color: #b71c1c; font-weight:bold;'
+            elif isinstance(val, int) and val > 15:
+                return 'background-color: #e8f5e9; color: #2e7d32;'
+            return ''
+            
+        st.markdown("### Stan Urlopów Wypoczynkowych")
+        st.dataframe(df_kadry.style.map(styl_urlop, subset=['POZOSTAŁO DO WYKORZYSTANIA']), use_container_width=True, hide_index=True)
+        
+        st.divider()
+        st.markdown("### 📋 Historia wszystkich nieobecności")
+        if st.session_state.nieobecnosci:
+            df_nieob = pd.DataFrame(st.session_state.nieobecnosci)
+            df_nieob = df_nieob.sort_values(by="Data_od", ascending=False)
+            st.dataframe(df_nieob, use_container_width=True, hide_index=True)
+            
+            # Przycisk czyszczenia
+            if st.button("🗑️ Wyczyść historię nieobecności"):
+                st.session_state.nieobecnosci = []
+                zapisz_dane(PLIK_NIEOBECNOSCI, [])
+                st.rerun()
+    else:
+        st.info("Brak pracowników. Dodaj pierwszą osobę z zespołu powyżej."
