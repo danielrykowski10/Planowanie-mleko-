@@ -39,7 +39,7 @@ st.markdown("""
 # --- ZAKŁADKI ---
 tab1, tab2 = st.tabs(["📝 Rejestr Partii (Aparatownia & Serownia)", "📈 Analiza Uzysków dla Kierownika"])
 
-# --- NORMY ZAKŁADOWE (Domyślne cele: ile L mleka na 1 kg sera) ---
+# --- NORMY ZAKŁADOWE ---
 CELE_UZYSKU = {
     "Gouda": 10.0,
     "Cheddar": 9.8,
@@ -52,13 +52,17 @@ CELE_UZYSKU = {
 with tab1:
     st.title("🧀 Rejestr Produkcyjny (Cała Partia)")
     
-    with st.form("formularz_partii", clear_on_submit=True):
+    with st.form("formularz_partii", clear_on_submit=False):
         col_podstawowe, col_aparatownia, col_serownia = st.columns(3)
         
         with col_podstawowe:
             st.markdown("### 📋 Identyfikacja Partii")
             data_partii = st.date_input("Data produkcji", datetime.date.today())
-            nr_partii = st.text_input("Numer partii / zmiany", placeholder="np. P-01/26")
+            
+            # AUTOMATYCZNE PRZYPISANIE DATY JAKO NUMERU PARTII
+            domyslny_numer = data_partii.strftime("%d.%m.%Y")
+            nr_partii = st.text_input("Numer partii / zmiany", value=domyslny_numer)
+            
             rodzaj_sera = st.selectbox("Rodzaj sera", ["Gouda", "Cheddar", "Mozzarella"])
             ilosc_warek = st.number_input("Ilość warek w tej partii", min_value=1, value=10, step=1)
             
@@ -114,7 +118,16 @@ with tab2:
     st.title("📊 Panel Kontroli Uzysków z Całych Partii")
     
     with st.sidebar:
-        st.header("⚙️ Cele Uzysku (L/kg)")
+        st.header("⚙️ Zarządzanie")
+        
+        # Przycisk do czyszczenia zepsutych/starych danych
+        if st.button("🗑️ WYCZYŚĆ HISTORIĘ", use_container_width=True):
+            st.session_state.historia_uzysku = []
+            zapisz_dane([])
+            st.rerun()
+            
+        st.divider()
+        st.header("🎯 Cele Uzysku (L/kg)")
         cel_gouda = st.number_input("Cel Gouda (L/kg)", value=CELE_UZYSKU["Gouda"], step=0.1)
         cel_cheddar = st.number_input("Cel Cheddar (L/kg)", value=CELE_UZYSKU["Cheddar"], step=0.1)
         cel_mozzarella = st.number_input("Cel Mozzarella (L/kg)", value=CELE_UZYSKU["Mozzarella"], step=0.1)
@@ -125,9 +138,16 @@ with tab2:
     else:
         df = pd.DataFrame(st.session_state.historia_uzysku)
         
+        # --- BEZPIECZNIK DLA STARYCH DANYCH (chroni przed KeyError) ---
+        if 'Ilosc_warek' not in df.columns: df['Ilosc_warek'] = 1
+        if 'Partia' not in df.columns: df['Partia'] = df.get('Warka', df['Data'])
+        if 'Mleko_L' not in df.columns: df['Mleko_L'] = 10000
+        if 'Ser_kg' not in df.columns: df['Ser_kg'] = 1000
+        df['Ilosc_warek'] = df['Ilosc_warek'].replace(0, 1) # Zapobiega dzieleniu przez zero
+        
         # OBLICZANIE KLUCZOWYCH WSKAŹNIKÓW (KPI)
         df['Uzysk (L/kg)'] = (df['Mleko_L'] / df['Ser_kg']).round(2)
-        df['Cel (L/kg)'] = df['Ser'].map(CELE_UZYSKU)
+        df['Cel (L/kg)'] = df['Ser'].map(CELE_UZYSKU).fillna(10.0)
         df['Odchylenie (L/kg)'] = (df['Uzysk (L/kg)'] - df['Cel (L/kg)']).round(2)
         df['Mleko_tys_L'] = df['Mleko_L'] / 1000
         df['Srednio_ser_na_warke'] = (df['Ser_kg'] / df['Ilosc_warek']).round(1)
@@ -154,7 +174,6 @@ with tab2:
         # --- ASYSTENT AI DLA KIEROWNIKA ---
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Bezpieczne składanie HTML dla ostrzeżeń
         if delta_uzysk > 0.2: 
             alert_html = f"<div style='background-color:#ffebee; border:1px solid #ffcdd2; border-radius:8px; padding:15px; text-align:center; color:#b71c1c; font-weight:bold; margin-bottom:10px;'>"
             alert_html += f"🚨 ALARM UZYSKU DLA CAŁEJ PARTII! Zmarnowaliście ok. {abs(strata_mleka):.0f} litrów mleka w stosunku do normy na tych {ost['Ilosc_warek']} warkach!"
@@ -188,7 +207,9 @@ with tab2:
         
         st.markdown("#### 📋 Pełen Rejestr Partii")
         cols_to_show = ['Data', 'Partia', 'Ser', 'Ilosc_warek', 'Mleko_tys_L', 'Tluszcz_%', 'Bialko_%', 'Ser_kg', 'Wilgotnosc_%', 'Uzysk (L/kg)', 'Odchylenie (L/kg)']
-        df_wyswietl = df[cols_to_show].sort_values(by=['Data', 'Partia'], ascending=[False, False])
+        # Filtr dla ewentualnych braków po starych danych
+        cols_available = [c for c in cols_to_show if c in df.columns]
+        df_wyswietl = df[cols_available].sort_values(by=['Data', 'Partia'], ascending=[False, False])
         
         # Funkcja do kolorowania odchyleń
         def stylizuj_odchylenie(val):
